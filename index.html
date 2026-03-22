@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dynamic Wheel of Life</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            background-color: #f4f7f6;
+            padding: 20px;
+        }
+        .container { position: relative; margin-bottom: 20px; }
+        canvas {
+            background-color: white;
+            border-radius: 50%;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+            cursor: pointer;
+            touch-action: none; 
+        }
+        .stats {
+            font-size: 1.8rem;
+            font-weight: bold;
+            margin: 20px 0;
+            color: #2c3e50;
+        }
+        .controls {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+            gap: 20px;
+            width: 100%;
+            max-width: 1100px;
+        }
+        .control-group {
+            background: white;
+            padding: 20px 15px 15px 15px; /* Extra top padding for the X button */
+            border-radius: 12px;
+            display: flex;
+            flex-direction: column; /* Stacked layout looks cleaner for sliders */
+            gap: 10px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+            border: 1px solid #eee;
+            position: relative; /* Needed for top-right positioning */
+        }
+        .input-row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .cat-input {
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            padding: 8px;
+            font-weight: bold;
+            flex: 1;
+        }
+        .score-val { 
+            width: 30px; 
+            font-weight: bold; 
+            color: #3498db;
+            text-align: center;
+        }
+        input[type="range"] { 
+            width: 100%;
+            cursor: pointer; 
+        }
+        .button-row { display: flex; gap: 15px; margin: 25px; flex-wrap: wrap; }
+        button {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: all 0.2s;
+        }
+        .btn-add { background-color: #3498db; color: white; }
+        .btn-save { background-color: #27ae60; color: white; }
+        .btn-reset { background-color: #95a5a6; color: white; }
+        
+        /* New Top-Right Delete Button */
+        .btn-del { 
+            position: absolute;
+            top: 5px;
+            right: 5px;
+            background-color: #ff7675; 
+            color: white; 
+            width: 22px;
+            height: 22px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 4px; /* Rounded square */
+            font-size: 14px;
+            padding: 0;
+            line-height: 1;
+        }
+        button:hover { opacity: 0.9; transform: translateY(-1px); }
+    </style>
+</head>
+<body>
+
+    <h1>Wheel of Life</h1>
+    
+    <div class="container">
+        <canvas id="wheelCanvas" width="600" height="600"></canvas>
+    </div>
+
+    <div class="stats">Average: <span id="averageScore">0.0</span></div>
+
+    <div class="button-row">
+        <button class="btn-add" onclick="addCategory()">+ New Category</button>
+        <button class="btn-save" onclick="downloadImage()">Download PNG</button>
+        <button class="btn-reset" onclick="resetAll()">Reset All</button>
+    </div>
+
+    <div class="controls" id="controlsArea"></div>
+
+    <script>
+        const canvas = document.getElementById('wheelCanvas');
+        const ctx = canvas.getContext('2d');
+        const avgDisplay = document.getElementById('averageScore');
+        const controlsArea = document.getElementById('controlsArea');
+
+        const segmentColors = ['#ffcccc', '#ffe5cc', '#ffffcc', '#e5ffcc', '#ccffcc', '#ccffe5', '#ccffff', '#cce5ff', '#ccccff', '#e5ccff'];
+
+        let categories = JSON.parse(localStorage.getItem('wheel_cats')) || ["Health", "Career", "Finance", "Family", "Social"];
+        let scores = JSON.parse(localStorage.getItem('wheel_scores')) || [5, 5, 5, 5, 5];
+
+        const centerX = canvas.width / 2;
+        const centerY = canvas.height / 2;
+        const radius = 280; 
+
+        function init() {
+            renderUI();
+            draw();
+            updateAverage();
+            canvas.addEventListener('mousedown', handleInput);
+        }
+
+        function renderUI() {
+            controlsArea.innerHTML = '';
+            categories.forEach((cat, i) => {
+                const div = document.createElement('div');
+                div.className = 'control-group';
+                div.style.borderLeft = `8px solid ${segmentColors[i % segmentColors.length]}`;
+                div.innerHTML = `
+                    <button class="btn-del" title="Delete" onclick="deleteCategory(${i})">×</button>
+                    <div class="input-row">
+                        <input type="text" class="cat-input" value="${cat}" oninput="updateCatName(${i}, this.value)">
+                        <span class="score-val" id="val-${i}">${scores[i]}</span>
+                    </div>
+                    <input type="range" min="0" max="10" value="${scores[i]}" step="1" oninput="updateScore(${i}, this.value)">
+                `;
+                controlsArea.appendChild(div);
+            });
+        }
+
+        window.updateCatName = function(i, val) { 
+            categories[i] = val; 
+            save(); 
+            draw(); 
+        };
+
+        window.updateScore = function(i, val) {
+            scores[i] = parseInt(val);
+            const valDisplay = document.getElementById(`val-${i}`);
+            if(valDisplay) valDisplay.innerText = val;
+            save(); 
+            draw(); 
+            updateAverage();
+        };
+
+        window.addCategory = function() {
+            if (categories.length >= 24) return alert("Canvas might get too crowded!");
+            categories.push("New Category");
+            scores.push(5);
+            save(); 
+            renderUI(); 
+            draw(); 
+            updateAverage();
+        };
+
+        window.deleteCategory = function(i) {
+            if (categories.length <= 3) return alert("Keep at least 3 categories.");
+            categories.splice(i, 1);
+            scores.splice(i, 1);
+            save(); 
+            renderUI(); 
+            draw(); 
+            updateAverage();
+        };
+
+        function save() {
+            localStorage.setItem('wheel_cats', JSON.stringify(categories));
+            localStorage.setItem('wheel_scores', JSON.stringify(scores));
+        }
+
+        function updateAverage() {
+            const sum = scores.reduce((a, b) => a + b, 0);
+            const avg = (sum / categories.length).toFixed(1);
+            avgDisplay.innerText = avg;
+        }
+
+        function draw() {
+            ctx.fillStyle = "white";
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            const num = categories.length;
+            const angleStep = (2 * Math.PI) / num;
+            const startOffset = -Math.PI / 2;
+
+            for (let i = 0; i < num; i++) {
+                const startA = i * angleStep + startOffset;
+                const endA = (i + 1) * angleStep + startOffset;
+                const midA = startA + angleStep / 2;
+
+                ctx.beginPath();
+                ctx.moveTo(centerX, centerY);
+                ctx.arc(centerX, centerY, radius, startA, endA);
+                ctx.fillStyle = segmentColors[i % segmentColors.length];
+                ctx.fill();
+                ctx.strokeStyle = "#ccc";
+                ctx.stroke();
+
+                if (scores[i] > 0) {
+                    const sRad = (scores[i] / 10) * radius;
+                    ctx.beginPath();
+                    ctx.moveTo(centerX, centerY);
+                    ctx.arc(centerX, centerY, sRad, startA, endA);
+                    ctx.fillStyle = "rgba(0,0,0,0.15)";
+                    ctx.fill();
+                }
+
+                ctx.save();
+                const labelDist = radius * 0.7;
+                const lx = centerX + Math.cos(midA) * labelDist;
+                const ly = centerY + Math.sin(midA) * labelDist;
+                ctx.translate(lx, ly);
+
+                let textRot = midA + Math.PI/2;
+                if (midA > 0 && midA < Math.PI) { textRot += Math.PI; }
+                ctx.rotate(textRot);
+
+                ctx.textAlign = "center";
+                ctx.textBaseline = "middle";
+                ctx.fillStyle = "#333";
+                ctx.font = "bold 12px Arial";
+                ctx.fillText(categories[i], 0, -5);
+                ctx.font = "10px Arial";
+                ctx.fillText(scores[i] + "/10", 0, 10);
+                ctx.restore();
+            }
+
+            ctx.setLineDash([2, 4]);
+            ctx.strokeStyle = "rgba(0,0,0,0.1)";
+            for (let s = 1; s <= 9; s++) {
+                ctx.beginPath();
+                ctx.arc(centerX, centerY, (s/10)*radius, 0, Math.PI*2);
+                ctx.stroke();
+            }
+            ctx.setLineDash([]);
+        }
+
+        window.downloadImage = function() {
+            const link = document.createElement('a');
+            link.download = `wheel-${new Date().toISOString().slice(0,10)}.png`;
+            link.href = canvas.toDataURL('image/png');
+            link.click();
+        };
+
+        window.resetAll = function() {
+            if(confirm("Proceed with full reset?")) {
+                localStorage.clear();
+                location.reload();
+            }
+        };
+
+        function handleInput(e) {
+            const rect = canvas.getBoundingClientRect();
+            const x = e.clientX - rect.left - centerX;
+            const y = e.clientY - rect.top - centerY;
+            const dist = Math.sqrt(x*x + y*y);
+            if (dist > radius + 10) return;
+
+            let angle = Math.atan2(y, x) + Math.PI / 2;
+            if (angle < 0) angle += 2 * Math.PI;
+            
+            const num = categories.length;
+            const i = Math.floor(angle / ((2 * Math.PI) / num)) % num;
+            let val = Math.round((dist / radius) * 10);
+            val = Math.max(0, Math.min(10, val));
+            
+            updateScore(i, val);
+            const sliders = document.querySelectorAll('input[type="range"]');
+            if(sliders[i]) sliders[i].value = val;
+        }
+
+        init();
+    </script>
+</body>
+</html>
